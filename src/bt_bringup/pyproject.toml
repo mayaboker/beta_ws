@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bt-bringup"
+version = "0.1.0"
+description = "Betaloop bringup configuration and EEPROM data."
+requires-python = ">=3.10"
+dependencies = [
+  "bt-app>=0.1.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["bt_bringup*"]
+
+[tool.setuptools.data-files]
+"share/bt_bringup/config" = ["config/*"]
+"share/bt_bringup/eprom/hove_test" = ["eprom/hove_test/*"]

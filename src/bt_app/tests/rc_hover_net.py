@@ -1,22 +1,15 @@
 #!/usr/bin/env python3
 
 import argparse
-import socket
 import time
 from dataclasses import dataclass
 
-from rc_arm_net import (
-    MSP_API_VERSION,
-    SITL_HOST,
-    SITL_PORT,
-    read_altitude,
-    read_attitude,
-    read_rc,
-    read_status_ex,
-    request_msp,
-    send_for,
-    send_raw_rc,
-    wait_until_not_calibrating,
+from loguru import logger
+
+from bt_app.msp import (
+    DEFAULT_SITL_HOST,
+    DEFAULT_SITL_PORT,
+    BetaflightMspClient,
 )
 
 
@@ -89,10 +82,10 @@ class AltitudeHoverController:
 
 
 def send_hover(
-    sock: socket.socket,
+    msp: BetaflightMspClient,
     config: HoverConfig,
     *,
-    print_every_s: float = 0.5,
+    log_every_s: float = 0.5,
 ):
     controller = AltitudeHoverController(config)
     dt = 1.0 / config.rate_hz
@@ -102,7 +95,7 @@ def send_hover(
 
     while time.monotonic() < end:
         loop_start = time.monotonic()
-        altitude = read_altitude(sock)
+        altitude = msp.read_altitude()
         throttle = controller.throttle_for(
             altitude["altitude_m"],
             altitude["vertical_speed_m_s"],
@@ -110,19 +103,24 @@ def send_hover(
         )
         last_throttle = throttle
 
-        send_raw_rc(sock, make_channels(throttle, armed=True))
+        msp.send_raw_rc(make_channels(throttle, armed=True))
 
         if loop_start >= next_print:
-            attitude = read_attitude(sock)
-            print(
+            attitude = msp.read_attitude()
+            logger.info(
                 "hover "
-                f"alt={altitude['altitude_m']:.2f}m "
-                f"vz={altitude['vertical_speed_m_s']:.2f}m/s "
-                f"thr={throttle} "
-                f"roll={attitude['roll_deg']:.1f} "
-                f"pitch={attitude['pitch_deg']:.1f}"
+                "alt={:.2f}m "
+                "vz={:.2f}m/s "
+                "thr={} "
+                "roll={:.1f} "
+                "pitch={:.1f}",
+                altitude["altitude_m"],
+                altitude["vertical_speed_m_s"],
+                throttle,
+                attitude["roll_deg"],
+                attitude["pitch_deg"],
             )
-            next_print = loop_start + print_every_s
+            next_print = loop_start + log_every_s
 
         elapsed = time.monotonic() - loop_start
         time.sleep(max(0.0, dt - elapsed))
@@ -131,7 +129,7 @@ def send_hover(
 
 
 def land(
-    sock: socket.socket,
+    msp: BetaflightMspClient,
     *,
     from_throttle: int,
     duration_s: float = 4.0,
@@ -143,7 +141,7 @@ def land(
     for i in range(steps):
         t = i / max(1, steps - 1)
         throttle = int(from_throttle + (RC_MIN - from_throttle) * t)
-        send_raw_rc(sock, make_channels(throttle, armed=True))
+        msp.send_raw_rc(make_channels(throttle, armed=True))
         time.sleep(dt)
 
 
@@ -151,8 +149,8 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Arm Betaflight SITL over MSP and hold altitude with throttle feedback."
     )
-    parser.add_argument("--host", default=SITL_HOST)
-    parser.add_argument("--port", default=SITL_PORT, type=int)
+    parser.add_argument("--host", default=DEFAULT_SITL_HOST)
+    parser.add_argument("--port", default=DEFAULT_SITL_PORT, type=int)
     parser.add_argument("--target-altitude", default=1.0, type=float)
     parser.add_argument("--duration", default=20.0, type=float)
     parser.add_argument("--hover-throttle", default=1450, type=int)
@@ -182,40 +180,37 @@ def main():
     disarmed = make_channels(RC_MIN, armed=False)
     armed_low_throttle = make_channels(RC_MIN, armed=True)
 
-    with socket.create_connection((args.host, args.port), timeout=2.0) as sock:
-        sock.settimeout(0.05)
-        print(f"Connected to Betaflight SITL MSP at {args.host}:{args.port}")
-
+    with BetaflightMspClient(args.host, args.port) as msp:
         time.sleep(2.0)
-        api = request_msp(sock, MSP_API_VERSION)
-        print("MSP API raw:", api.hex(" "))
-        print("Initial RC:", read_rc(sock))
-        print("Initial status:", read_status_ex(sock))
+        api = msp.read_api_version_raw()
+        logger.info("MSP API raw: {}", api.hex(" "))
+        logger.info("Initial RC: {}", msp.read_rc())
+        logger.info("Initial status: {}", msp.read_status_ex())
 
-        print("Waiting for CALIBRATING to clear...")
-        status = wait_until_not_calibrating(sock, timeout_s=15.0)
-        print("Calibration cleared:", status)
+        logger.info("Waiting for CALIBRATING to clear...")
+        status = msp.wait_until_not_calibrating(timeout_s=15.0)
+        logger.info("Calibration cleared: {}", status)
 
-        print("Sending disarmed neutral...")
-        send_for(2.0, sock, disarmed, rate_hz=config.rate_hz)
+        logger.info("Sending disarmed neutral...")
+        msp.send_for(2.0, disarmed, rate_hz=config.rate_hz)
 
-        print("ARM: AUX1 high, throttle low...")
-        send_for(3.0, sock, armed_low_throttle, rate_hz=config.rate_hz)
+        logger.info("ARM: AUX1 high, throttle low...")
+        msp.send_for(3.0, armed_low_throttle, rate_hz=config.rate_hz)
 
-        print(
-            "Hover: "
-            f"target={config.target_altitude_m:.2f}m "
-            f"duration={config.duration_s:.1f}s "
-            f"base_throttle={config.hover_throttle}"
+        logger.info(
+            "Hover: target={:.2f}m duration={:.1f}s base_throttle={}",
+            config.target_altitude_m,
+            config.duration_s,
+            config.hover_throttle,
         )
-        last_throttle = send_hover(sock, config)
+        last_throttle = send_hover(msp, config)
 
-        print("Landing...")
-        land(sock, from_throttle=last_throttle, rate_hz=config.rate_hz)
+        logger.info("Landing...")
+        land(msp, from_throttle=last_throttle, rate_hz=config.rate_hz)
 
-        print("DISARM...")
-        send_for(1.0, sock, disarmed, rate_hz=config.rate_hz)
-        print("Final status:", read_status_ex(sock))
+        logger.info("DISARM...")
+        msp.send_for(1.0, disarmed, rate_hz=config.rate_hz)
+        logger.info("Final status: {}", msp.read_status_ex())
 
 
 if __name__ == "__main__":
