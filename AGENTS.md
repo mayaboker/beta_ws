@@ -1,5 +1,11 @@
 # Project Agent Instructions
 
+## Python Type Hinting
+
+- New Python code must include type hints for function parameters, return values, and class attributes where practical.
+- When editing existing Python code, add or improve nearby type hints if the change is in scope.
+- Prefer standard Python typing syntax supported by the project environment, such as `list[str]`, `dict[str, Any]`, and `str | None`.
+
 ## Python Logging
 
 - Do not add new `print()` statements in Python modules.

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+from __future__ import annotations
+
 import argparse
 import json
 import time
@@ -15,7 +17,7 @@ from bt_app.msp import (
     BetaflightMspClient,
 )
 from bt_app.msgs import TrackerResult
-
+from bt_app.control import PID
 
 RC_MIN = 1000
 RC_MID = 1500
@@ -26,7 +28,7 @@ ARM_HIGH = 1900
 
 @dataclass(frozen=True)
 class MissionConfig:
-    target_altitude_m: float = 5.0
+    target_altitude_m: float = 15.0
     hold_duration_s: float = 20.0
     hover_throttle: int = 1450
     min_throttle: int = 1100
@@ -37,26 +39,29 @@ class MissionConfig:
     integral_limit: float = 1.0
     rate_hz: float = 50.0
     landing_duration_s: float = 5.0
+    max_tilt_deg: float = 12.0
+    forward_duration_s: float = 8.0
+    forward_pitch_offset: int = 25
 
 
 class TrackerResultSubscriber:
     def __init__(
         self,
         *,
-        endpoint=ZMQ_TRACKER_RESULT_ENDPOINT,
-        topic=ZMQ_TRACKER_RESULT_TOPIC,
-        context=None,
-    ):
-        self.endpoint = endpoint
-        self.topic = topic
-        self.context = context or zmq.Context.instance()
-        self.subscriber = self.context.socket(zmq.SUB)
+        endpoint: str = ZMQ_TRACKER_RESULT_ENDPOINT,
+        topic: bytes = ZMQ_TRACKER_RESULT_TOPIC,
+        context: zmq.Context | None = None,
+    ) -> None:
+        self.endpoint: str = endpoint
+        self.topic: bytes = topic
+        self.context: zmq.Context = context or zmq.Context.instance()
+        self.subscriber: zmq.Socket = self.context.socket(zmq.SUB)
         self.subscriber.setsockopt(zmq.RCVHWM, 10)
         self.subscriber.setsockopt(zmq.SUBSCRIBE, self.topic)
-        self.poller = zmq.Poller()
-        self.latest = None
+        self.poller: zmq.Poller = zmq.Poller()
+        self.latest: TrackerResult | None = None
 
-    def start(self):
+    def start(self) -> None:
         self.subscriber.connect(self.endpoint)
         self.poller.register(self.subscriber, zmq.POLLIN)
         logger.info(
@@ -65,11 +70,11 @@ class TrackerResultSubscriber:
             self.topic.decode("utf-8", errors="replace"),
         )
 
-    def close(self):
+    def close(self) -> None:
         self.poller.unregister(self.subscriber)
         self.subscriber.close(linger=0)
 
-    def poll_latest(self, timeout_ms=0):
+    def poll_latest(self, timeout_ms: int = 0) -> TrackerResult | None:
         while True:
             events = dict(self.poller.poll(timeout_ms))
             timeout_ms = 0
@@ -79,13 +84,12 @@ class TrackerResultSubscriber:
             _topic, payload = self.subscriber.recv_multipart()
             data = json.loads(payload.decode("utf-8"))
             error_x = float(data["error_x"])
-            error_y=float(data["error_y"])
+            error_y = float(data["error_y"])
             self.latest = TrackerResult(
                 error_x,
                 error_y,
             )
 
-            logger.info(f"tracker x,y ({error_x}{error_y})")
 
 
 class AltitudeHoverController:
@@ -122,6 +126,7 @@ def make_channels(
     roll: int = RC_MID,
     pitch: int = RC_MID,
     yaw: int = RC_MID,
+    angel: bool = False,
 ):
     return [
         roll,
@@ -129,10 +134,62 @@ def make_channels(
         int(clamp(throttle, RC_MIN, RC_MAX)),
         yaw,
         ARM_HIGH if armed else ARM_LOW,
-        RC_MIN,
+        ARM_HIGH if angel else ARM_LOW,
         RC_MIN,
         RC_MIN,
     ]
+
+from bt_app.mission.track import ControllerConfig, ControlOutput, VisualTargetController
+
+def fly_forward(msp, tracker_sub: TrackerResultSubscriber, config, *, duration_s=None, log_every_s=0.5, last_throttle=None):
+    dt = 1.0 / config.rate_hz
+
+    cfg = ControllerConfig(
+        hover_throttle=0.55,
+
+        # More negative = faster forward flight
+        forward_pitch_deg=-20.0,
+
+        # Start conservative
+        max_pitch_deg=100.0,
+        max_throttle=0.85,
+
+        # Camera-control gains
+        kp_yaw=3.0,
+        kp_pitch_y=10,
+        kp_throttle_y=0.006,
+    )
+
+    controller = VisualTargetController(cfg)
+
+    while True:
+        tracker_result = tracker_sub.poll_latest()
+        cmd = controller.update(tracker_result.error_x, tracker_result.error_y, dt)
+
+        print(tracker_result.error_x, tracker_result.error_y)
+        print("Roll command deg:      ", cmd.roll_deg)
+        print("Pitch command deg:     ", cmd.pitch_deg)
+        print("Yaw rate command dps:  ", cmd.yaw_rate_dps)
+        print("Throttle command:      ", cmd.throttle)
+
+        print("RC roll:               ", cmd.rc_roll)
+        print("RC pitch:              ", cmd.rc_pitch)
+        print("RC yaw:                ", cmd.rc_yaw)
+        print("RC throttle:           ", cmd.rc_throttle)
+
+
+        msp.send_raw_rc(
+            make_channels(
+                cmd.rc_throttle,
+                roll=cmd.rc_roll,
+                pitch=cmd.rc_pitch,
+                yaw=cmd.rc_yaw,
+                armed=True,
+                angel=True
+            )
+        )
+
+        time.sleep(dt)
 
 
 def takeoff_and_hold(msp, tracker_sub, config, *, log_every_s=0.5):
@@ -165,13 +222,12 @@ def takeoff_and_hold(msp, tracker_sub, config, *, log_every_s=0.5):
             attitude = msp.read_attitude()
             logger.info(
                 "mission alt={:.2f}m vz={:.2f}m/s throttle={} "
-                "roll={:.1f} pitch={:.1f} tracker={}",
+                "roll={:.1f} pitch={:.1f} ",
                 altitude["altitude_m"],
                 altitude["vertical_speed_m_s"],
                 throttle,
                 attitude["roll_deg"],
-                attitude["pitch_deg"],
-                tracker_result,
+                attitude["pitch_deg"]
             )
             next_log = loop_start + log_every_s
 
@@ -200,8 +256,8 @@ def parse_args():
     parser.add_argument("--host", default=DEFAULT_SITL_HOST)
     parser.add_argument("--port", default=DEFAULT_SITL_PORT, type=int)
     parser.add_argument("--tracker-endpoint", default=ZMQ_TRACKER_RESULT_ENDPOINT)
-    parser.add_argument("--target-altitude", default=5.0, type=float)
-    parser.add_argument("--hold-duration", default=20.0, type=float)
+    parser.add_argument("--target-altitude", default=15.0, type=float)
+    parser.add_argument("--hold-duration", default=10.0, type=float)
     parser.add_argument("--landing-duration", default=5.0, type=float)
     parser.add_argument("--hover-throttle", default=1450, type=int)
     parser.add_argument("--min-throttle", default=1100, type=int)
@@ -210,6 +266,9 @@ def parse_args():
     parser.add_argument("--kd", default=90.0, type=float)
     parser.add_argument("--ki", default=25.0, type=float)
     parser.add_argument("--rate-hz", default=50.0, type=float)
+    parser.add_argument("--max-tilt-deg", default=12.0, type=float)
+    parser.add_argument("--forward-duration", default=8.0, type=float)
+    parser.add_argument("--forward-pitch-offset", default=8, type=int)
     return parser.parse_args()
 
 
@@ -226,6 +285,9 @@ def main():
         ki=args.ki,
         rate_hz=args.rate_hz,
         landing_duration_s=args.landing_duration,
+        max_tilt_deg=args.max_tilt_deg,
+        forward_duration_s=args.forward_duration,
+        forward_pitch_offset=args.forward_pitch_offset,
     )
     disarmed = make_channels(RC_MIN, armed=False)
     armed_low_throttle = make_channels(RC_MIN, armed=True)
@@ -251,8 +313,11 @@ def main():
             msp.send_for(3.0, armed_low_throttle, rate_hz=config.rate_hz)
 
             last_throttle = config.hover_throttle
+            last_throttle = takeoff_and_hold(msp, tracker_sub, config)
+
+            logger.info("---------------------------------------------xxxxxxxxxxxxxxx")
             try:
-                last_throttle = takeoff_and_hold(msp, tracker_sub, config)
+                last_throttle = fly_forward(msp, tracker_sub, config, last_throttle=last_throttle)
             finally:
                 land(
                     msp,
@@ -260,9 +325,9 @@ def main():
                     duration_s=config.landing_duration_s,
                     rate_hz=config.rate_hz,
                 )
-                logger.info("DISARM...")
-                msp.send_for(1.0, disarmed, rate_hz=config.rate_hz)
-                logger.info("Final status: {}", msp.read_status_ex())
+            logger.info("DISARM...")
+            msp.send_for(1.0, disarmed, rate_hz=config.rate_hz)
+            logger.info("Final status: {}", msp.read_status_ex())
     finally:
         tracker_sub.close()
 

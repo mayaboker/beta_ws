@@ -1,3 +1,7 @@
+
+show_startup_tips false
+show_release_notes false
+
 layout {
     pane split_direction="vertical" {
         pane name="gz_camera" command="bash" {
@@ -7,12 +11,5 @@ layout {
             args "-lc" "cd /home/user/workspaces/beta_ws && source venv/bin/activate && python -m bt_app.trackers.red_box_tracker --no-camera-publisher"
         }
     }
-    pane split_direction="vertical" {
-        pane name="takeoff_and_go" command="bash" {
-            args "-lc" "cd /home/user/workspaces/beta_ws && source venv/bin/activate && python -m bt_app.mission.takeoff_and_go"
-        }
-        pane name="shell" command="bash" {
-            args "-lc" "cd /home/user/workspaces/beta_ws && source venv/bin/activate && exec bash"
-        }
-    }
+   
 }
