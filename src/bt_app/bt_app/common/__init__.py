@@ -3,6 +3,7 @@ GAZEBO_ODOMETRY_TOPIC = "/model/iris/odometry"
 
 ZMQ_CAMERA_ENDPOINT = "ipc:///tmp/bt_app.camera"
 ZMQ_CAMERA_TOPIC = b"camera.image"
+ZMQ_CONFIG_ENDPOINT = "ipc:///tmp/bt_app.config"
 ZMQ_ODOMETRY_ENDPOINT = "ipc:///tmp/bt_app.odometry"
 ZMQ_LINEAR_VELOCITY_TOPIC = b"odometry.linear_velocity"
 ZMQ_TRACKER_RESULT_ENDPOINT = "ipc:///tmp/bt_app.tracker_result"
@@ -21,6 +22,7 @@ __all__ = [
     "GAZEBO_ODOMETRY_TOPIC",
     "ZMQ_CAMERA_ENDPOINT",
     "ZMQ_CAMERA_TOPIC",
+    "ZMQ_CONFIG_ENDPOINT",
     "ZMQ_LINEAR_VELOCITY_TOPIC",
     "ZMQ_ODOMETRY_ENDPOINT",
     "ZMQ_TRACKER_RESULT_ENDPOINT",

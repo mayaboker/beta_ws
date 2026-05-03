@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 import zmq
 from loguru import logger
-
+from bt_app.mission.track import ControllerConfig, ControlOutput, VisualTargetController
 from bt_app.common import ZMQ_TRACKER_RESULT_ENDPOINT, ZMQ_TRACKER_RESULT_TOPIC
 from bt_app.msp import (
     DEFAULT_SITL_HOST,
@@ -140,7 +140,7 @@ def make_channels(
         RC_MIN,
     ]
 
-from bt_app.mission.track import ControllerConfig, ControlOutput, VisualTargetController
+
 
 def fly_forward(msp, tracker_sub: TrackerResultSubscriber, config, *, duration_s=None, log_every_s=0.5, last_throttle=None):
     dt = 1.0 / config.rate_hz

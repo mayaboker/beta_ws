@@ -12,9 +12,12 @@ dependencies = [
   "numpy>=1.24",
   "opencv-python>=4.8",
   "pyzmq>=25",
+  "prompt-toolkit>=0.1",
 ]
 
 [project.scripts]
+bt-config-dump-client = "bt_app.config_service:client_main"
+bt-config-dump-service = "bt_app.config_service:service_main"
 bt-gz-camera-publisher = "bt_app.sensors.gz_camera:main"
 bt-gz-odom-publisher = "bt_app.sensors.gz_odom:main"
 bt-zmq-odom-view = "bt_app.sensors.zmq_odom_view:main"

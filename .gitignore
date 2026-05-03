@@ -1,2 +1,8 @@
 venv
 *.pyc
+src/bt_gui/bt_gui.egg-info/dependency_links.txt
+src/bt_gui/bt_gui.egg-info/entry_points.txt
+src/bt_gui/bt_gui.egg-info/PKG-INFO
+src/bt_gui/bt_gui.egg-info/requires.txt
+src/bt_gui/bt_gui.egg-info/SOURCES.txt
+src/bt_gui/bt_gui.egg-info/top_level.txt
