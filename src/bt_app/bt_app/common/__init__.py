@@ -1,8 +1,11 @@
 GAZEBO_CAMERA_TOPIC = "/camera"
+GAZEBO_ODOMETRY_TOPIC = "/model/iris/odometry"
 
-ZMQ_CAMERA_ENDPOINT = "ipc://bt_app.camera"
+ZMQ_CAMERA_ENDPOINT = "ipc:///tmp/bt_app.camera"
 ZMQ_CAMERA_TOPIC = b"camera.image"
-ZMQ_TRACKER_RESULT_ENDPOINT = "ipc://bt_app.tracker_result"
+ZMQ_ODOMETRY_ENDPOINT = "ipc:///tmp/bt_app.odometry"
+ZMQ_LINEAR_VELOCITY_TOPIC = b"odometry.linear_velocity"
+ZMQ_TRACKER_RESULT_ENDPOINT = "ipc:///tmp/bt_app.tracker_result"
 ZMQ_TRACKER_RESULT_TOPIC = b"tracker_result"
 
 DEFAULT_CAMERA_WINDOW = "Gazebo Camera"
@@ -15,8 +18,11 @@ __all__ = [
     "DEFAULT_CAMERA_WINDOW",
     "DEFAULT_RED_BOX_TRACKER_WINDOW",
     "GAZEBO_CAMERA_TOPIC",
+    "GAZEBO_ODOMETRY_TOPIC",
     "ZMQ_CAMERA_ENDPOINT",
     "ZMQ_CAMERA_TOPIC",
+    "ZMQ_LINEAR_VELOCITY_TOPIC",
+    "ZMQ_ODOMETRY_ENDPOINT",
     "ZMQ_TRACKER_RESULT_ENDPOINT",
     "ZMQ_TRACKER_RESULT_TOPIC",
 ]

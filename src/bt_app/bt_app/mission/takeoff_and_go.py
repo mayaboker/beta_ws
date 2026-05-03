@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import time
 from dataclasses import dataclass
 
@@ -28,8 +29,8 @@ ARM_HIGH = 1900
 
 @dataclass(frozen=True)
 class MissionConfig:
-    target_altitude_m: float = 15.0
-    hold_duration_s: float = 20.0
+    target_altitude_m: float = 50.0
+    hold_duration_s: float = 50.0
     hover_throttle: int = 1450
     min_throttle: int = 1100
     max_throttle: int = 1750
@@ -98,7 +99,7 @@ class AltitudeHoverController:
         self.integral_error = 0.0
 
     def throttle_for(self, altitude_m: float, vertical_speed_m_s: float, dt: float):
-        error = self.config.target_altitude_m - altitude_m
+        error = 9.0 - altitude_m
         self.integral_error = clamp(
             self.integral_error + error * dt,
             -self.config.integral_limit,
@@ -151,22 +152,24 @@ def fly_forward(msp, tracker_sub: TrackerResultSubscriber, config, *, duration_s
         forward_pitch_deg=-20.0,
 
         # Start conservative
-        max_pitch_deg=100.0,
+        max_pitch_deg=50.0,
         max_throttle=0.85,
 
         # Camera-control gains
-        kp_yaw=3.0,
-        kp_pitch_y=10,
-        kp_throttle_y=0.006,
+        kp_yaw=5.0,
+        kp_pitch_y=1.5,
+        kp_throttle_y=0.06,
     )
 
     controller = VisualTargetController(cfg)
 
     while True:
         tracker_result = tracker_sub.poll_latest()
-        cmd = controller.update(tracker_result.error_x, tracker_result.error_y, dt)
+        err_x_deg = math.degrees(tracker_result.error_x)
+        err_y_deg = math.degrees(tracker_result.error_y)
+        cmd = controller.update(err_x_deg, err_y_deg, dt)
 
-        print(tracker_result.error_x, tracker_result.error_y)
+        print(err_x_deg, err_y_deg)
         print("Roll command deg:      ", cmd.roll_deg)
         print("Pitch command deg:     ", cmd.pitch_deg)
         print("Yaw rate command dps:  ", cmd.yaw_rate_dps)
@@ -195,7 +198,7 @@ def fly_forward(msp, tracker_sub: TrackerResultSubscriber, config, *, duration_s
 def takeoff_and_hold(msp, tracker_sub, config, *, log_every_s=0.5):
     controller = AltitudeHoverController(config)
     dt = 1.0 / config.rate_hz
-    end = time.monotonic() + config.hold_duration_s
+    end = time.monotonic() + 30#config.hold_duration_s
     next_log = time.monotonic()
     last_throttle = config.hover_throttle
 
@@ -208,7 +211,6 @@ def takeoff_and_hold(msp, tracker_sub, config, *, log_every_s=0.5):
     while time.monotonic() < end:
         loop_start = time.monotonic()
         altitude = msp.read_altitude()
-        tracker_result = tracker_sub.poll_latest()
         throttle = controller.throttle_for(
             altitude["altitude_m"],
             altitude["vertical_speed_m_s"],
@@ -256,7 +258,7 @@ def parse_args():
     parser.add_argument("--host", default=DEFAULT_SITL_HOST)
     parser.add_argument("--port", default=DEFAULT_SITL_PORT, type=int)
     parser.add_argument("--tracker-endpoint", default=ZMQ_TRACKER_RESULT_ENDPOINT)
-    parser.add_argument("--target-altitude", default=15.0, type=float)
+    parser.add_argument("--target-altitude", default=50.0, type=float)
     parser.add_argument("--hold-duration", default=10.0, type=float)
     parser.add_argument("--landing-duration", default=5.0, type=float)
     parser.add_argument("--hover-throttle", default=1450, type=int)

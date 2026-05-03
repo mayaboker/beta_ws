@@ -16,6 +16,8 @@ dependencies = [
 
 [project.scripts]
 bt-gz-camera-publisher = "bt_app.sensors.gz_camera:main"
+bt-gz-odom-publisher = "bt_app.sensors.gz_odom:main"
+bt-zmq-odom-view = "bt_app.sensors.zmq_odom_view:main"
 bt-image-display = "bt_app.trackers.image_display:main"
 bt-red-box-tracker = "bt_app.trackers.red_box_tracker:main"
 
